@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 打包产物（exe 通过 GitHub Releases 分发，不进仓库）
+build/
+dist/
+*.spec.bak
+
+# 开发期测试与临时文件
+build_tools/_silent_test/
+build_tools/_test_dl/
+build_tools/_test_p2p/
+build_tools/_e2e/
+build_tools/preview_*.png
+build_tools/exe_shot.png
+build_tools/aria2.zip
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.log
+
+# 本地工作记录（不入公开仓库）
+.workbuddy/
+
+# 内核副本，正式位置在 assets/aria2c.exe
+build_tools/aria2c.exe
