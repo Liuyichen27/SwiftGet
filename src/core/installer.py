@@ -166,25 +166,38 @@ def launch_after_install(hint_path: str | None = None) -> None:
                 continue
 
 
-def verify_installer(path: str | Path) -> tuple[bool, str]:
-    """安装包基础校验：存在、大小合理、PE/MSI 头正常。"""
+def verify_installer(path: str | Path, kind: str = "installer") -> tuple[bool, str]:
+    """下载件基础校验：存在、大小合理、文件头正常。
+
+    ``kind`` 决定按什么标准判断——安装包看 PE/MSI 头，源码包看 ZIP 头，
+    绿色版单文件仍然看 PE 头（它本身就是个 exe）。
+    """
     p = Path(path)
     if not p.exists():
         return False, "文件不存在"
     size = p.stat().st_size
-    if size < 100 * 1024:
+    if kind == "archive":
+        # 源码包本来就小，几十 KB 是正常的，门槛放低
+        if size < 2 * 1024:
+            return False, f"文件过小（{size} 字节），可能下载不完整"
+    elif size < 100 * 1024:
         return False, f"文件过小（{size} 字节），可能下载不完整"
     try:
         with p.open("rb") as fh:
             head = fh.read(8)
     except OSError as exc:
         return False, f"无法读取文件：{exc}"
+
+    if kind == "archive":
+        if head[:2] != b"PK":
+            return False, "不是有效的 ZIP 压缩包"
+        return True, "OK"
     if p.suffix.lower() == ".msi":
         if head[:8] != b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1":
             return False, "MSI 文件头异常，可能已损坏"
         return True, "OK"
     if head[:2] != b"MZ":
-        return False, "不是有效的 Windows 安装包"
+        return False, "不是有效的 Windows 可执行文件"
     return True, "OK"
 
 

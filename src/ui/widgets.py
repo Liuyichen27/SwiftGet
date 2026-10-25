@@ -26,12 +26,13 @@ class AppCard(ctk.CTkFrame):
         app,
         colors: dict[str, str],
         on_toggle: Callable[["AppCard"], None],
+        desc_wrap: int = 200,
         **kwargs,
     ) -> None:
         super().__init__(
             master,
             width=self.CARD_WIDTH,
-            height=132,
+            height=kwargs.pop("card_height", 132),
             corner_radius=theme._RADIUS,
             fg_color=colors["surface"],
             border_width=1,
@@ -89,7 +90,7 @@ class AppCard(ctk.CTkFrame):
             text=app.desc,
             anchor="w",
             justify="left",
-            wraplength=200,
+            wraplength=desc_wrap,
             font=(theme.FONT_FAMILY, 11),
             text_color=colors["text_muted"],
         )

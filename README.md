@@ -15,6 +15,9 @@
 
 - **常用软件一键静默安装** —— 内置 12 款高频软件，勾选后自动下载 + 静默安装，
   全程无弹窗、无捆绑引导。
+- **自创应用** —— 单独一页放作者自己写的 7 个小工具（CleanBlackboard 简黑板、
+  dupfinder、mdcheck、autostart、picslim、pdftidy、quickhash），
+  绿色版下载完直接双击，源码包下载完解压即用，不经过安装流程。
 - **双引擎加速**
   - 直链下载：多线程分片（默认 16 连接），服务器支持 `Range` 时明显提速。
   - BitTorrent：支持磁力链与 `.torrent` 种子，通过 DHT + Peer Exchange 从
@@ -52,12 +55,25 @@
 ## 使用
 
 1. 双击 `SwiftGet.exe` 启动。
-2. 在「常用软件」页勾选需要的软件，选择保存路径与安装语言。
+2. 在「常用软件」页勾选需要的软件，选择保存路径与安装语言；
+   也可以在「自创应用」页下载作者自研的工具。
 3. 点击「开始下载」，程序会预检源、下载、校验并静默安装。
 4. 安装阶段首次会弹出一次 UAC 授权，点「是」即可（程序本身以普通权限运行，
    仅在真正安装时提权）。
 
 「链接 / P2P 加速」页可以直接粘贴直链、磁力链，或选择 `.torrent` 种子文件。
+
+「自创应用」页是作者自研的小工具集合，走同一套多线程下载，但**没有安装环节**：
+
+![自创应用](docs/preview-own.png)
+
+| 应用 | 类型 | 下载后 |
+| --- | --- | --- |
+| CleanBlackboard - 简黑板 | 绿色版 exe | 双击直接运行，无安装、无残留 |
+| dupfinder / mdcheck / autostart / picslim / pdftidy / quickhash | 源码包 zip | 解压后 `pip install .`，零依赖或少量依赖 |
+
+每个应用都配了「官方直链 + gh-proxy 加速镜像」两个源，国内直连 GitHub 超时时
+会自动切到镜像；卡片下载完只显示「已保存」，不会去装任何东西。
 
 ## 软件清单与源维护
 
@@ -116,11 +132,13 @@ src/
     paths.py             路径与资源定位
     settings.py          设置持久化
     catalog.py           软件清单 / 多源 / 预检
+    own_apps.py          自创应用清单（作者自研工具）
     aria2.py             aria2 RPC 引擎（分片 + P2P）
     installer.py         静默安装与提权
   ui/
     app.py               主窗口与调度
     page_apps.py         常用软件页
+    page_own.py          自创应用页
     page_link.py         链接 / P2P 页
     page_settings.py     设置页
     widgets.py           卡片、任务行等组件

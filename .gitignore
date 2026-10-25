@@ -15,6 +15,7 @@ build_tools/_silent_test/
 build_tools/_test_dl/
 build_tools/_test_p2p/
 build_tools/_e2e/
+build_tools/_own/
 build_tools/preview_*.png
 build_tools/exe_shot.png
 build_tools/aria2.zip

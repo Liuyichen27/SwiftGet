@@ -22,6 +22,7 @@ from core.settings import Settings
 from . import theme, widgets
 from .page_apps import AppsPage
 from .page_link import LinkPage
+from .page_own import OwnAppsPage
 from .page_settings import SettingsPage
 
 
@@ -187,7 +188,7 @@ class SwiftGetApp(ctk.CTk):
         self.tabs = widgets.SegmentedTabs(
             nav,
             c,
-            ["常用软件", "链接 / P2P 加速", "设置"],
+            ["常用软件", "自创应用", "链接 / P2P 加速", "设置"],
             command=self._switch_page,
         )
         self.tabs.pack()
@@ -212,9 +213,10 @@ class SwiftGetApp(ctk.CTk):
 
         self.pages: list[ctk.CTkFrame] = []
         self.apps_page = AppsPage(self.body, self)
+        self.own_page = OwnAppsPage(self.body, self)
         self.link_page = LinkPage(self.body, self)
         self.settings_page = SettingsPage(self.body, self)
-        for page in (self.apps_page, self.link_page, self.settings_page):
+        for page in (self.apps_page, self.own_page, self.link_page, self.settings_page):
             page.grid(row=0, column=0, sticky="nsew")
             self.pages.append(page)
         self._switch_page(0)
@@ -225,7 +227,7 @@ class SwiftGetApp(ctk.CTk):
                 page.tkraise()
         if self.tabs.active != index:
             self.tabs.select(index, notify=False)
-        if index == 2:
+        if index == 3:
             self.settings_page.refresh()
 
     def _toggle_theme(self) -> None:
@@ -267,13 +269,13 @@ class SwiftGetApp(ctk.CTk):
                    for j in self.jobs.values()):
                 continue
             job = DownloadJob(app=app, lang=lang)
-            job.card = self.apps_page.card_for(app.id)
+            job.card = self.card_for(app.id)
             self.jobs[f"{app.id}_{time.time_ns()}"] = job
             threading.Thread(
                 target=self._download_worker, args=(job, target_dir), daemon=True
             ).start()
 
-        self.apps_page.refresh_status()
+        self._refresh_pages()
 
     def _download_worker(self, job: DownloadJob, target_dir: Path) -> None:
         """后台线程：预检源 -> 提交 aria2 -> 等待完成 -> 校验 -> 排队安装。"""
@@ -350,14 +352,26 @@ class SwiftGetApp(ctk.CTk):
         job.state = "verifying"
         self._ui(job, "verifying", "下载完成，正在校验文件…")
 
-        ok, msg = verify_installer(job.path) if job.path else (False, "找不到下载的文件")
+        ok, msg = (
+            verify_installer(job.path, app.kind) if job.path else (False, "找不到下载的文件")
+        )
         if not ok:
             job.state = "error"
             job.message = f"文件校验失败：{msg}"
             self._ui(job, "error", job.message)
             return
 
-        if self.settings.auto_install:
+        if app.kind != "installer":
+            # 绿色版 / 源码包没有安装步骤，下完就算完成
+            job.state = "finished"
+            tip = (
+                "绿色版，双击即可运行"
+                if app.kind == "portable"
+                else "源码包，解压后按 README 使用"
+            )
+            job.install_result = tip
+            self._ui(job, "finished", f"已保存 {job.path.name} · {tip}")
+        elif self.settings.auto_install:
             self._ui(job, "installing", "下载完成，等待静默安装…")
             self._install_queue.put(job)
             self._start_install_worker()
@@ -454,7 +468,7 @@ class SwiftGetApp(ctk.CTk):
                     card.show_progress(frac, text)
             except Exception as exc:  # noqa: BLE001
                 print("[UI] 卡片状态更新失败:", exc)
-        self.apps_page.refresh_status()
+        self._refresh_pages()
 
     # ------------------------------------------------------------------
     # 进度轮询
@@ -479,6 +493,7 @@ class SwiftGetApp(ctk.CTk):
                        if j.state in ("downloading", "verifying", "installing")]
         if not active_jobs:
             self.apps_page.set_global_speed(0)
+            self.own_page.set_global_speed(0)
             return
 
         statuses: dict[str, dict] = {}
@@ -514,6 +529,7 @@ class SwiftGetApp(ctk.CTk):
                 self._apply_job_progress(job, 0.0, text)
 
         self.apps_page.set_global_speed(total_speed)
+        self.own_page.set_global_speed(total_speed)
         self.link_page.sync_statuses()
 
     def _apply_job_progress(self, job: DownloadJob, frac: float, text: str) -> None:
@@ -531,6 +547,20 @@ class SwiftGetApp(ctk.CTk):
     def _on_catalog_updated(self, count: int) -> None:
         if count > 0:
             self.post(self.apps_page.rebuild)
+
+    def card_for(self, app_id: str):
+        """下载页的卡片可能在「常用软件」或「自创应用」里。"""
+        card = self.apps_page.card_for(app_id)
+        if card is None:
+            card = self.own_page.card_for(app_id)
+        return card
+
+    def _refresh_pages(self) -> None:
+        for page in (self.apps_page, self.own_page):
+            try:
+                page.refresh_status()
+            except Exception:  # noqa: BLE001
+                pass
 
     def open_data_dir(self) -> None:
         open_in_explorer(data_root())

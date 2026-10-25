@@ -47,6 +47,10 @@ class AppEntry:
     # 安装器是否真的支持完全静默。False 表示会弹安装界面，需要用户点几下
     silent_ok: bool = True
     manual_hint: str = ""
+    # installer：正常安装包；portable：绿色版，下载完直接跑；archive：源码压缩包
+    kind: str = "installer"
+    # 指定下载后的文件名（不填则按 id 生成 xxx_setup.exe）
+    filename: str = ""
 
     # -- 安装命令 ---------------------------------------------------------
     def install_command(self, file_path: str, lang: str = "zh") -> list[str]:
@@ -69,9 +73,13 @@ class AppEntry:
 
     @property
     def file_ext(self) -> str:
+        if self.filename.lower().endswith(".zip"):
+            return ".zip"
         return ".msi" if self.installer == "msi" else ".exe"
 
     def suggested_filename(self) -> str:
+        if self.filename:
+            return self.filename
         base = "".join(c for c in self.name if c.isalnum() or c in "-_ ")
         base = base.strip().replace(" ", "_") or self.id
         return f"{base}_setup{self.file_ext}"
@@ -92,6 +100,8 @@ class AppEntry:
             "note": self.note,
             "silent_ok": self.silent_ok,
             "manual_hint": self.manual_hint,
+            "kind": self.kind,
+            "filename": self.filename,
             "sources": [{"url": s.url, "label": s.label} for s in self.sources],
         }
 
@@ -374,13 +384,16 @@ class Catalog:
                     note=raw.get("note", ""),
                     silent_ok=raw.get("silent_ok", True),
                     manual_hint=raw.get("manual_hint", ""),
+                    kind=raw.get("kind", "installer"),
+                    filename=raw.get("filename", ""),
                 )
                 continue
             # 仅覆盖显式提供的字段
             if srcs:
                 existing.sources = srcs
             for key in ("name", "vendor", "category", "desc", "size_label",
-                        "installer", "homepage", "note", "silent_ok", "manual_hint"):
+                        "installer", "homepage", "note", "silent_ok", "manual_hint",
+                        "kind", "filename"):
                 if key in raw:
                     setattr(existing, key, raw[key])
             if "silent_args" in raw:
