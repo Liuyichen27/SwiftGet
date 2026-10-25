@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from .catalog import AppEntry, Source
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 OWNER = "Liuyichen27"
 
 OWN_CATEGORIES = ["全部", "桌面应用", "命令行工具"]
@@ -48,6 +48,7 @@ OWN_APPS: list[AppEntry] = [
         filename="CleanBlackboard.exe",
         homepage="https://github.com/Liuyichen27/clean-blackboard",
         note="手写、框选、小黑板、导出 PNG 与工程文件，全部离线可用。",
+        usage="双击 CleanBlackboard.exe 就能写 · Ctrl+S 存工程 / Ctrl+E 导 PNG",
     ),
     _e(
         id="dupfinder",
@@ -57,11 +58,12 @@ OWN_APPS: list[AppEntry] = [
         desc="三级筛选找重复文件，绝不删任何文件",
         color="#12B76A",
         sources=_release("dupfinder", f"dupfinder-{VERSION}.zip"),
-        size_label="≈11 KB · 源码包",
+        size_label="≈14 KB · 源码包",
         kind="archive",
         filename=f"dupfinder-{VERSION}.zip",
         homepage="https://github.com/Liuyichen27/dupfinder",
-        note="解压后 python -m pip install . 即可，零第三方依赖。",
+        note="三级筛选：按大小分桶 → 头部取样 → 全文哈希，6 万文件几秒扫完。\n只出报告，宁可少报也不误删。",
+        usage="pip install .  →  dupfinder D:/照片 D:/备份",
     ),
     _e(
         id="mdcheck",
@@ -71,11 +73,12 @@ OWN_APPS: list[AppEntry] = [
         desc="Markdown检查：链接、代码块、标题",
         color="#7A5AF8",
         sources=_release("mdcheck", f"mdcheck-{VERSION}.zip"),
-        size_label="≈11 KB · 源码包",
+        size_label="≈14 KB · 源码包",
         kind="archive",
         filename=f"mdcheck-{VERSION}.zip",
         homepage="https://github.com/Liuyichen27/mdcheck",
-        note="零依赖；--toc --write 可以原地更新目录。",
+        note="查七项：代码块未闭合、本地链接/图片失效、标题层级跳跃、多个 H1、\n锚点对不上、空链接。零依赖，--toc --write 原地更新目录。",
+        usage="pip install .  →  mdcheck . --toc --write",
     ),
     _e(
         id="autostart",
@@ -85,11 +88,12 @@ OWN_APPS: list[AppEntry] = [
         desc="看清开机启动项的真实来源，禁用前先备份",
         color="#F79009",
         sources=_release("autostart", f"autostart-{VERSION}.zip"),
-        size_label="≈13 KB · 源码包",
+        size_label="≈15 KB · 源码包",
         kind="archive",
         filename=f"autostart-{VERSION}.zip",
         homepage="https://github.com/Liuyichen27/autostart",
-        note="只支持 Windows，零依赖（winreg）。",
+        note="摊开三处真实来源：HKCU Run、HKLM Run、启动文件夹；\n每条带完整命令，禁用前自动备份，随时还原。仅 Windows，零依赖。",
+        usage="pip install .  →  autostart list",
     ),
     _e(
         id="picslim",
@@ -99,11 +103,12 @@ OWN_APPS: list[AppEntry] = [
         desc="批量压图片体积，按目标体积自适应",
         color="#0EA5E9",
         sources=_release("picslim", f"picslim-{VERSION}.zip"),
-        size_label="≈12 KB · 源码包",
+        size_label="≈18 KB · 源码包",
         kind="archive",
         filename=f"picslim-{VERSION}.zip",
         homepage="https://github.com/Liuyichen27/picslim",
-        note="需要 Pillow；压不动会直说，不偷偷降质量。",
+        note="先降质量，降到下限还超标才缩尺寸；只读原图，结果写到另一个目录，\n绝不覆盖源文件。需要 Pillow。",
+        usage="pip install .  →  picslim ./照片 -o ./压缩后 --max-size 500K",
     ),
     _e(
         id="pdftidy",
@@ -113,11 +118,12 @@ OWN_APPS: list[AppEntry] = [
         desc="合并、拆分、提取、旋转、加密的PDF工具箱",
         color="#F04438",
         sources=_release("pdftidy", f"pdftidy-{VERSION}.zip"),
-        size_label="≈13 KB · 源码包",
+        size_label="≈20 KB · 源码包",
         kind="archive",
         filename=f"pdftidy-{VERSION}.zip",
         homepage="https://github.com/Liuyichen27/pdftidy",
-        note="需要 pypdf；默认 AES-256 加密，环境不支持会明说。",
+        note="八个子命令覆盖日常操作；默认 AES-256，加密库缺失时退回 RC4-128 并明说。\n不修改源文件。需要 pypdf。",
+        usage="pip install .  →  pdftidy merge a.pdf b.pdf -o 合并.pdf",
     ),
     _e(
         id="quickhash",
@@ -127,11 +133,12 @@ OWN_APPS: list[AppEntry] = [
         desc="算文件哈希、生成校验文件，零依赖",
         color="#667085",
         sources=_release("quickhash", f"quickhash-{VERSION}.zip"),
-        size_label="≈11 KB · 源码包",
+        size_label="≈17 KB · 源码包",
         kind="archive",
         filename=f"quickhash-{VERSION}.zip",
         homepage="https://github.com/Liuyichen27/quickhash",
-        note="纯标准库；能验发行版给的 SHA256SUMS。",
+        note="输出格式与 coreutils sha256sum 完全一致，能验发行版的 SHA256SUMS，\n别人也能用 sha256sum -c 验你的。1 MB 流式读取，纯标准库。",
+        usage="pip install .  →  quickhash 镜像.iso --save SHA256SUMS",
     ),
 ]
 

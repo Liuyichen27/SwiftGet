@@ -51,6 +51,8 @@ class AppEntry:
     kind: str = "installer"
     # 指定下载后的文件名（不填则按 id 生成 xxx_setup.exe）
     filename: str = ""
+    # 源码包/命令行工具的用法（一行命令），显示在卡片上，省得用户解压后翻 README
+    usage: str = ""
 
     # -- 安装命令 ---------------------------------------------------------
     def install_command(self, file_path: str, lang: str = "zh") -> list[str]:
@@ -102,6 +104,7 @@ class AppEntry:
             "manual_hint": self.manual_hint,
             "kind": self.kind,
             "filename": self.filename,
+            "usage": self.usage,
             "sources": [{"url": s.url, "label": s.label} for s in self.sources],
         }
 
@@ -386,6 +389,7 @@ class Catalog:
                     manual_hint=raw.get("manual_hint", ""),
                     kind=raw.get("kind", "installer"),
                     filename=raw.get("filename", ""),
+                    usage=raw.get("usage", ""),
                 )
                 continue
             # 仅覆盖显式提供的字段
@@ -393,7 +397,7 @@ class Catalog:
                 existing.sources = srcs
             for key in ("name", "vendor", "category", "desc", "size_label",
                         "installer", "homepage", "note", "silent_ok", "manual_hint",
-                        "kind", "filename"):
+                        "kind", "filename", "usage"):
                 if key in raw:
                     setattr(existing, key, raw[key])
             if "silent_args" in raw:

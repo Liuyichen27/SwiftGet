@@ -105,6 +105,21 @@ class AppCard(ctk.CTkFrame):
         )
         self.meta.grid(row=2, column=0, columnspan=3, padx=16, pady=(6, 0), sticky="w")
 
+        # 命令行工具把用法直接印在卡片上（内容来自 core/own_apps.py 的源码），
+        # 免得用户下完源码包还得解压翻 README 才知道怎么跑。
+        self.usage = None
+        if getattr(app, "usage", ""):
+            self.usage = ctk.CTkLabel(
+                self,
+                text=app.usage,
+                anchor="w",
+                justify="left",
+                wraplength=desc_wrap,
+                font=("Consolas", 10),
+                text_color=colors["text_faint"],
+            )
+            self.usage.grid(row=3, column=0, columnspan=3, padx=16, pady=(4, 0), sticky="w")
+
         # 进度条浮在卡片底部，不参与布局，避免卡片高度跳动
         self.progress = ctk.CTkProgressBar(
             self,

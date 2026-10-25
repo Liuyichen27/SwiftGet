@@ -277,6 +277,22 @@ class SwiftGetApp(ctk.CTk):
 
         self._refresh_pages()
 
+    def _notify_archive_done(self, app: AppEntry) -> None:
+        """源码包下完弹一次提示：说明就在压缩包里。
+
+        一批里连下几个包时只弹一次，否则窗口会糊满对话框。
+        """
+        now = time.time()
+        if now - getattr(self, "_tip_at", 0.0) < 30:
+            return
+        self._tip_at = now
+        msg = (
+            f"{app.name} 下载完毕。\n\n"
+            "解压后在文件夹里能看到「使用说明.txt」——怎么装、怎么用、"
+            "有哪些参数、边界在哪，都写在里面，不用联网也不用进 GitHub。"
+        )
+        self.post(lambda: messagebox.showinfo("下载完毕", msg, parent=self))
+
     def _download_worker(self, job: DownloadJob, target_dir: Path) -> None:
         """后台线程：预检源 -> 提交 aria2 -> 等待完成 -> 校验 -> 排队安装。"""
         app = job.app
@@ -364,13 +380,16 @@ class SwiftGetApp(ctk.CTk):
         if app.kind != "installer":
             # 绿色版 / 源码包没有安装步骤，下完就算完成
             job.state = "finished"
-            tip = (
-                "绿色版，双击即可运行"
-                if app.kind == "portable"
-                else "源码包，解压后按 README 使用"
-            )
-            job.install_result = tip
-            self._ui(job, "finished", f"已保存 {job.path.name} · {tip}")
+            if app.kind == "portable":
+                tip = "绿色版，双击即可运行"
+                job.install_result = tip
+                self._ui(job, "finished", f"已保存 {job.path.name} · {tip}")
+            else:
+                # 压缩包里放了 使用说明.txt：进不去 GitHub 的人也能照着装
+                tip = "解压后先看「使用说明.txt」"
+                job.install_result = tip
+                self._ui(job, "finished", f"已保存 {job.path.name} · {tip}")
+                self._notify_archive_done(app)
         elif self.settings.auto_install:
             self._ui(job, "installing", "下载完成，等待静默安装…")
             self._install_queue.put(job)
