@@ -1,12 +1,15 @@
 """设置页。"""
 from __future__ import annotations
 
+import threading
+import webbrowser
 from pathlib import Path
 from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
 
-from core.paths import APP_VERSION, data_root, open_in_explorer
+from core import update
+from core.paths import APP_VERSION, data_root, is_frozen, open_in_explorer
 
 from . import theme, widgets
 
@@ -216,10 +219,24 @@ class SettingsPage(ctk.CTkFrame):
         inner = ctk.CTkFrame(card, fg_color="transparent")
         inner.grid(row=0, column=0, columnspan=2, sticky="ew", padx=16, pady=14)
 
+        head = ctk.CTkFrame(inner, fg_color="transparent")
+        head.pack(fill="x")
+
         ctk.CTkLabel(
-            inner, text=f"SwiftGet · 极速软件下载器  v{APP_VERSION}",
+            head, text=f"SwiftGet · 极速软件下载器  v{APP_VERSION}",
             anchor="w", font=(theme.FONT_FAMILY, 12, "bold"), text_color=c["text"],
-        ).pack(anchor="w")
+        ).pack(side="left")
+
+        self.update_btn = ctk.CTkButton(
+            head, text="检查更新", width=84, height=26,
+            font=(theme.FONT_FAMILY, 10),
+            fg_color=c["surface"],
+            hover_color=c["track"],
+            text_color=c["text"], border_width=1, border_color=c["border"],
+            command=self._on_check_update,
+        )
+        self.update_btn.pack(side="right")
+        self._updating = False
 
         ctk.CTkLabel(
             inner,
@@ -229,6 +246,120 @@ class SettingsPage(ctk.CTkFrame):
             anchor="w", justify="left",
             font=(theme.FONT_FAMILY, 10), text_color=c["text_muted"],
         ).pack(anchor="w", pady=(6, 0))
+
+    # -- 自更新 -----------------------------------------------------------
+    def _on_check_update(self) -> None:
+        if self._updating:
+            return
+        self._updating = True
+        self._set_update_btn("检查中…", state="disabled")
+
+        def worker() -> None:
+            try:
+                info = update.check_update()
+            except Exception as exc:  # noqa: BLE001
+                info = {"ok": False, "error": str(exc)}
+            self.host.post(lambda: self._update_checked(info))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _set_update_btn(self, text: str, state: str = "normal") -> None:
+        try:
+            self.update_btn.configure(text=text, state=state)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _update_checked(self, info: dict) -> None:
+        self._updating = False
+        self._set_update_btn("检查更新")
+
+        if not info.get("ok"):
+            messagebox.showwarning(
+                "检查更新",
+                f"没能连上 GitHub：{info.get('error') or '未知原因'}\n"
+                f"当前版本 v{APP_VERSION}。稍后再试，或直接到发布页看。",
+                parent=self,
+            )
+            webbrowser.open(update.RELEASES_PAGE)
+            return
+
+        if not info.get("has_update"):
+            messagebox.showinfo(
+                "检查更新", f"已是最新版本 v{APP_VERSION}。", parent=self,
+            )
+            return
+
+        latest = info.get("latest") or "?"
+        notes = (info.get("notes") or "").strip()
+        if notes:
+            notes = notes[:500] + ("…" if len(notes) > 500 else "")
+        msg = f"发现新版本 v{latest}（当前 v{APP_VERSION}）。\n\n"
+        if notes:
+            msg += notes + "\n\n"
+        msg += "现在下载并更新吗？更新时程序会关掉，替换完成后自动重新打开。"
+
+        if not messagebox.askyesno("发现新版本", msg, parent=self):
+            return
+
+        if not is_frozen():
+            messagebox.showinfo(
+                "检查更新",
+                f"新版本 v{latest} 可用。\n源码运行模式不能自己替换，"
+                "请到发布页下载绿色版。",
+                parent=self,
+            )
+            webbrowser.open(info.get("page") or update.RELEASES_PAGE)
+            return
+
+        self._start_download(info)
+
+    def _start_download(self, info: dict) -> None:
+        self._updating = True
+        self._set_update_btn("0%", state="disabled")
+        urls = update.asset_urls(info.get("asset_url") or "")
+        dest = data_root() / f"SwiftGet-{info.get('latest')}.exe"
+
+        def progress(got: int, total: int) -> None:
+            pct = f"{round(got * 100 / total)}%" if total else "下载中"
+            self.host.post(lambda: self._set_update_btn(pct, state="disabled"))
+
+        def worker() -> None:
+            try:
+                path = update.download(urls, dest, progress)
+            except Exception as exc:  # noqa: BLE001
+                self.host.post(lambda: self._download_failed(exc, info))
+                return
+            self.host.post(lambda: self._download_done(path, info))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _download_failed(self, exc: Exception, info: dict) -> None:
+        self._updating = False
+        self._set_update_btn("检查更新")
+        if messagebox.askyesno(
+            "更新失败",
+            f"下载新版本失败：{exc}\n\n要打开发布页手动下载吗？",
+            parent=self,
+        ):
+            webbrowser.open(info.get("page") or update.RELEASES_PAGE)
+
+    def _download_done(self, path: Path, info: dict) -> None:
+        self._updating = False
+        self._set_update_btn("检查更新")
+        size = path.stat().st_size / 1024 / 1024 if path.exists() else 0
+        if not messagebox.askyesno(
+            "下载完成",
+            f"新版本 v{info.get('latest')} 已下载（{size:.1f} MB）。\n\n"
+            "点「是」立即替换并重启，程序会自动关掉再打开。",
+            parent=self,
+        ):
+            return
+        result = update.apply_update(path)
+        if not result.get("ok"):
+            messagebox.showerror("更新失败", str(result.get("error")), parent=self)
+            return
+        # 让 bat 拿到文件锁：先关窗，进程退出
+        self.host.after(200, self.host.destroy)
 
     # -- 回调 -------------------------------------------------------------
     def _persist(self) -> None:

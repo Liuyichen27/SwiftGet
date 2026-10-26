@@ -15,15 +15,23 @@ from __future__ import annotations
 
 from .catalog import AppEntry, Source
 
-VERSION = "1.1.0"
+# 每个项目各发各的版本，不再共用一个大版本号。
+# 之前所有条目共用一个 VERSION，只要有一个项目升版，其它项目的下载链接
+# 就会指向并不存在的 Release（404）——工具包还是 1.1.0，黑板已经是 1.2.0
+# 的时候这个坑必然踩。现在每条自己带 ver，互不影响。
+DEFAULT_VERSION = "1.1.0"
+VER_CLEANBLACKBOARD = "1.2.0"
+VER_AUTOSTARTFORAPP = "1.0.0"
+
 OWNER = "Liuyichen27"
 
 OWN_CATEGORIES = ["全部", "桌面应用", "命令行工具"]
 
 
-def _release(repo: str, filename: str) -> list[Source]:
+def _release(repo: str, filename: str, ver: str = DEFAULT_VERSION) -> list[Source]:
     """官方直链 + 加速镜像，两路都指向同一个 Release 附件。"""
-    path = f"{OWNER}/{repo}/releases/download/v{VERSION}/{filename}"
+    v = str(ver or DEFAULT_VERSION).lstrip("vV")
+    path = f"{OWNER}/{repo}/releases/download/v{v}/{filename}"
     return [
         Source(f"https://github.com/{path}", "官方"),
         Source(f"https://gh-proxy.com/https://github.com/{path}", "加速镜像"),
@@ -42,12 +50,12 @@ OWN_APPS: list[AppEntry] = [
         category="桌面应用",
         desc="双击就能写的白板，不联网、无账号，绿色版",
         color="#2F6BFF",
-        sources=_release("clean-blackboard", "CleanBlackboard.exe"),
+        sources=_release("clean-blackboard", "CleanBlackboard.exe", VER_CLEANBLACKBOARD),
         size_label="≈13.1 MB · 绿色版",
         kind="portable",
         filename="CleanBlackboard.exe",
         homepage="https://github.com/Liuyichen27/clean-blackboard",
-        note="手写、框选、小黑板、导出 PNG 与工程文件，全部离线可用。",
+        note="手写、框选/点选、选中改色、小黑板、导出 PNG 与工程文件，\n全部离线可用；1.2.0 起打开时自动检查更新。",
         usage="双击 CleanBlackboard.exe 就能写 · Ctrl+S 存工程 / Ctrl+E 导 PNG",
     ),
     _e(
@@ -57,10 +65,10 @@ OWN_APPS: list[AppEntry] = [
         category="命令行工具",
         desc="三级筛选找重复文件，绝不删任何文件",
         color="#12B76A",
-        sources=_release("dupfinder", f"dupfinder-{VERSION}.zip"),
+        sources=_release("dupfinder", f"dupfinder-{DEFAULT_VERSION}.zip"),
         size_label="≈14 KB · 源码包",
         kind="archive",
-        filename=f"dupfinder-{VERSION}.zip",
+        filename=f"dupfinder-{DEFAULT_VERSION}.zip",
         homepage="https://github.com/Liuyichen27/dupfinder",
         note="三级筛选：按大小分桶 → 头部取样 → 全文哈希，6 万文件几秒扫完。\n只出报告，宁可少报也不误删。",
         usage="pip install .  →  dupfinder D:/照片 D:/备份",
@@ -72,10 +80,10 @@ OWN_APPS: list[AppEntry] = [
         category="命令行工具",
         desc="Markdown检查：链接、代码块、标题",
         color="#7A5AF8",
-        sources=_release("mdcheck", f"mdcheck-{VERSION}.zip"),
+        sources=_release("mdcheck", f"mdcheck-{DEFAULT_VERSION}.zip"),
         size_label="≈14 KB · 源码包",
         kind="archive",
-        filename=f"mdcheck-{VERSION}.zip",
+        filename=f"mdcheck-{DEFAULT_VERSION}.zip",
         homepage="https://github.com/Liuyichen27/mdcheck",
         note="查七项：代码块未闭合、本地链接/图片失效、标题层级跳跃、多个 H1、\n锚点对不上、空链接。零依赖，--toc --write 原地更新目录。",
         usage="pip install .  →  mdcheck . --toc --write",
@@ -87,10 +95,10 @@ OWN_APPS: list[AppEntry] = [
         category="命令行工具",
         desc="看清开机启动项的真实来源，禁用前先备份",
         color="#F79009",
-        sources=_release("autostart", f"autostart-{VERSION}.zip"),
+        sources=_release("autostart", f"autostart-{DEFAULT_VERSION}.zip"),
         size_label="≈15 KB · 源码包",
         kind="archive",
-        filename=f"autostart-{VERSION}.zip",
+        filename=f"autostart-{DEFAULT_VERSION}.zip",
         homepage="https://github.com/Liuyichen27/autostart",
         note="摊开三处真实来源：HKCU Run、HKLM Run、启动文件夹；\n每条带完整命令，禁用前自动备份，随时还原。仅 Windows，零依赖。",
         usage="pip install .  →  autostart list",
@@ -102,10 +110,10 @@ OWN_APPS: list[AppEntry] = [
         category="命令行工具",
         desc="批量压图片体积，按目标体积自适应",
         color="#0EA5E9",
-        sources=_release("picslim", f"picslim-{VERSION}.zip"),
+        sources=_release("picslim", f"picslim-{DEFAULT_VERSION}.zip"),
         size_label="≈14 KB · 源码包",
         kind="archive",
-        filename=f"picslim-{VERSION}.zip",
+        filename=f"picslim-{DEFAULT_VERSION}.zip",
         homepage="https://github.com/Liuyichen27/picslim",
         note="先降质量，降到下限还超标才缩尺寸；只读原图，结果写到另一个目录，\n绝不覆盖源文件。需要 Pillow。",
         usage="pip install .  →  picslim ./照片 -o ./压缩后 --max-size 500K",
@@ -117,10 +125,10 @@ OWN_APPS: list[AppEntry] = [
         category="命令行工具",
         desc="合并、拆分、提取、旋转、加密的PDF工具箱",
         color="#F04438",
-        sources=_release("pdftidy", f"pdftidy-{VERSION}.zip"),
+        sources=_release("pdftidy", f"pdftidy-{DEFAULT_VERSION}.zip"),
         size_label="≈16 KB · 源码包",
         kind="archive",
-        filename=f"pdftidy-{VERSION}.zip",
+        filename=f"pdftidy-{DEFAULT_VERSION}.zip",
         homepage="https://github.com/Liuyichen27/pdftidy",
         note="八个子命令覆盖日常操作；默认 AES-256，加密库缺失时退回 RC4-128 并明说。\n不修改源文件。需要 pypdf。",
         usage="pip install .  →  pdftidy merge a.pdf b.pdf -o 合并.pdf",
@@ -132,13 +140,28 @@ OWN_APPS: list[AppEntry] = [
         category="命令行工具",
         desc="算文件哈希、生成校验文件，零依赖",
         color="#667085",
-        sources=_release("quickhash", f"quickhash-{VERSION}.zip"),
+        sources=_release("quickhash", f"quickhash-{DEFAULT_VERSION}.zip"),
         size_label="≈14 KB · 源码包",
         kind="archive",
-        filename=f"quickhash-{VERSION}.zip",
+        filename=f"quickhash-{DEFAULT_VERSION}.zip",
         homepage="https://github.com/Liuyichen27/quickhash",
         note="输出格式与 coreutils sha256sum 完全一致，能验发行版的 SHA256SUMS，\n别人也能用 sha256sum -c 验你的。1 MB 流式读取，纯标准库。",
         usage="pip install .  →  quickhash 镜像.iso --save SHA256SUMS",
+    ),
+    _e(
+        id="autostartforapp",
+        name="AutostartForApp - 启动项管理",
+        vendor="自研 · 桌面应用",
+        category="桌面应用",
+        desc="图形版开机启动项管理，看清来源再动手，动手前先备份",
+        color="#F79009",
+        sources=_release("autostart-for-app", "AutostartForApp.exe", VER_AUTOSTARTFORAPP),
+        size_label="≈13.1 MB · 绿色版",
+        kind="portable",
+        filename="AutostartForApp.exe",
+        homepage="https://github.com/Liuyichen27/autostart-for-app",
+        note="表格列出 HKCU/HKLM Run 与两个启动文件夹的全部启动项，\n每条带完整命令；禁用前自动备份，随时能还原。命令行版 autostart 仍然独立保留。",
+        usage="双击 AutostartForApp.exe · 选中一条 → 右侧详情 → 禁用/备份",
     ),
 ]
 

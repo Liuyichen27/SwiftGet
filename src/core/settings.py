@@ -51,10 +51,22 @@ class Settings:
         return cls(**{k: v for k, v in raw.items() if k in known})
 
     def save(self) -> None:
+        """原子写：先写 .tmp 再 replace。
+
+        直接 write_text 覆盖时，如果写一半崩溃/断电，settings.json 会变成
+        半截 JSON，下次启动 load() 解析失败就退回全部默认值——用户的下载
+        目录、主题、语言全丢。replace 是原子操作，要么旧的要么新的。
+        """
+        file = self.path()
+        tmp = file.with_suffix(".json.tmp")
         try:
-            self.path().write_text(
+            tmp.write_text(
                 json.dumps(asdict(self), ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
+            tmp.replace(file)
         except OSError:
-            pass
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass

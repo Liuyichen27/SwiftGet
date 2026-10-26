@@ -160,7 +160,11 @@ def launch_after_install(hint_path: str | None = None) -> None:
     for path in candidates:
         if path and Path(path).exists():
             try:
-                subprocess.Popen([path], creationflags=CREATE_NO_WINDOW)
+                # 用 ShellExecute 语义启动（等同用户双击）。老代码给 GUI 程序
+                # 传 CREATE_NO_WINDOW，某些程序会因为没有控制台/窗口站不对
+                # 而启动失败或者起来是空窗口；startfile 不吃这个参数，
+                # 也不会让子进程跟着本进程一起退出。
+                os.startfile(path)  # noqa: S606
                 return
             except OSError:
                 continue

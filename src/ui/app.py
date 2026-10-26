@@ -16,7 +16,8 @@ import customtkinter as ctk
 from core.aria2 import Aria2Engine, Aria2Error, Aria2Options, human_size, human_speed
 from core.catalog import AppEntry, Catalog, probe_source
 from core.installer import launch_after_install, run_silent, verify_installer
-from core.paths import APP_TITLE, APP_VERSION, data_root, open_in_explorer
+from core import update
+from core.paths import APP_TITLE, APP_VERSION, data_root, is_frozen, open_in_explorer
 from core.settings import Settings
 
 from . import theme, widgets
@@ -102,6 +103,39 @@ class SwiftGetApp(ctk.CTk):
 
         self._start_poll()
         self.after(300, self._warm_up_engine)
+        self.after(2500, self._auto_check_update)
+
+    def _auto_check_update(self) -> None:
+        """启动后台静默查一次新版：有就在标题栏和设置页按钮上标出来。
+
+        不弹窗——正下载东西的时候弹窗最烦人。查不到静默不管（缓存 6 小时，
+        弱网机器不会每次都去超时一遍）。
+        """
+        if self._closing or not is_frozen():
+            return
+
+        def worker() -> None:
+            try:
+                info = update.check_update()
+            except Exception:  # noqa: BLE001
+                return
+            if info.get("ok") and info.get("has_update"):
+                self.post(lambda: self._mark_new_version(info))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _mark_new_version(self, info: dict) -> None:
+        latest = info.get("latest") or ""
+        try:
+            self.title(f"{APP_TITLE} · 有新版本 v{latest}")
+        except Exception:  # noqa: BLE001
+            pass
+        btn = getattr(self.settings_page, "update_btn", None)
+        if btn is not None:
+            try:
+                btn.configure(text=f"新版 v{latest}")
+            except Exception:  # noqa: BLE001
+                pass
 
     # ------------------------------------------------------------------
     # 窗口基础
@@ -275,7 +309,22 @@ class SwiftGetApp(ctk.CTk):
                 target=self._download_worker, args=(job, target_dir), daemon=True
             ).start()
 
+        self._prune_jobs()
         self._refresh_pages()
+
+    def _prune_jobs(self, keep: int = 60) -> None:
+        """只留最近 60 条已结束任务。
+
+        ``self.jobs`` 以前只加不减，挂机一整天连下几十个包就一直涨，
+        卡片状态也跟着反复重算。按提交顺序（dict 插入序）从老的开始丢，
+        进行中的任务一律不动。
+        """
+        if len(self.jobs) <= keep:
+            return
+        overflow = len(self.jobs) - keep
+        for key in [k for k, j in self.jobs.items()
+                    if j.state in ("finished", "error")][:overflow]:
+            self.jobs.pop(key, None)
 
     def _notify_archive_done(self, app: AppEntry) -> None:
         """源码包下完弹一次提示：说明就在压缩包里。
@@ -328,12 +377,24 @@ class SwiftGetApp(ctk.CTk):
         job.state = "downloading"
         self._ui(job, "downloading", f"来自{label} · 已开始")
 
-        # 等待 aria2 完成
+        # 等待 aria2 完成。
+        # 关键：tell() 在 aria2 进程已经挂掉时会一直返回空字典，老代码里
+        # `continue` 会死等，任务永远卡在「下载中」，用户只能关软件。
+        # 这里改成「连续查不到就计数」：攒够 20 次（约 10 秒）还查不到，
+        # 或者引擎进程已经没了，就明确报错收尾。
+        miss = 0
         while not self._closing:
             status = self.engine.tell(gid)
             if not status:
+                miss += 1
+                if not self.engine.running or miss >= 20:
+                    job.state = "error"
+                    job.message = "下载内核（aria2）失去响应，任务已中止，请重试"
+                    self._ui(job, "error", job.message)
+                    return
                 time.sleep(0.5)
                 continue
+            miss = 0
 
             # 磁力链会先下载元数据，然后派生新 gid
             followed = status.get("followedBy")

@@ -1,6 +1,6 @@
 # SwiftGet · 极速软件下载器
 
-[![Version](https://img.shields.io/badge/version-1.0.0-2F6BFF)](https://github.com/liuyichen27/SwiftGet/releases)
+[![Version](https://img.shields.io/badge/version-1.2.0-2F6BFF)](https://github.com/liuyichen27/SwiftGet/releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6)](https://github.com/liuyichen27/SwiftGet/releases)
 [![License](https://img.shields.io/badge/license-MIT-12B76A)](LICENSE)
 
@@ -15,9 +15,12 @@
 
 - **常用软件一键静默安装** —— 内置 12 款高频软件，勾选后自动下载 + 静默安装，
   全程无弹窗、无捆绑引导。
-- **自创应用** —— 单独一页放作者自己写的 7 个小工具（CleanBlackboard 简黑板、
-  dupfinder、mdcheck、autostart、picslim、pdftidy、quickhash），
-  绿色版下载完直接双击，源码包下载完解压即用，不经过安装流程。
+- **自创应用** —— 单独一页放作者自己写的 8 个小工具（CleanBlackboard 简黑板、
+  AutostartForApp 启动项管理、dupfinder、mdcheck、autostart、picslim、pdftidy、
+  quickhash），绿色版下载完直接双击，源码包下载完解压即用，不经过安装流程。
+  每条链接各走各的版本号，某个项目升版不会把其它项目的下载地址带成 404。
+- **自己也能更新** —— 设置页「关于」里有「检查更新」，启动时也会在后台静默查一次；
+  发现新版就下载、校验 PE 头、写一个替换脚本等你退出后覆盖自身并重启。
 - **双引擎加速**
   - 直链下载：多线程分片（默认 16 连接），服务器支持 `Range` 时明显提速。
   - BitTorrent：支持磁力链与 `.torrent` 种子，通过 DHT + Peer Exchange 从
