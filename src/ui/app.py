@@ -356,10 +356,12 @@ class SwiftGetApp(ctk.CTk):
                     job.total = size
                 break
         if chosen is None:
-            job.state = "error"
-            job.message = "所有下载源都不可用，请检查网络或到官网手动下载"
-            self._ui(job, "error", job.message)
-            return
+            # 预检全挂 ≠ 真的下不了：弱网下 Range 探测经常整体超时，而 aria2
+            # 真正下载时反而能连上（连接数多、超时策略也更宽松）。所以这里
+            # 不直接判死，先拿第一个源直接试；真失败 aria2 会给出明确错误。
+            first = app.sources[0]
+            chosen = (first.url, first.label + "·预检超时，直接尝试")
+            self._ui(job, "downloading", "预检没连上，直接尝试官方源…")
 
         url, label = chosen
         job.url = url

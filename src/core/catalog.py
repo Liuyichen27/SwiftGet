@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
@@ -439,13 +440,12 @@ class Catalog:
 # --------------------------------------------------------------------------
 
 
-def probe_source(url: str, timeout: float = 6.0) -> tuple[bool, int]:
-    """返回 (可用, 字节大小)。用 Range 请求避免下载整个文件。"""
+def _probe_once(url: str, timeout: float) -> tuple[bool, int]:
     try:
         r = requests.get(
             url,
             headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) SwiftGet/1.0",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) SwiftGet/1.2",
                 "Range": "bytes=0-0",
             },
             stream=True,
@@ -472,6 +472,20 @@ def probe_source(url: str, timeout: float = 6.0) -> tuple[bool, int]:
         return r.status_code in (200, 206), total
     except Exception:  # noqa: BLE001
         return False, 0
+
+
+def probe_source(url: str, timeout: float = 6.0) -> tuple[bool, int]:
+    """返回 (可用, 字节大小)。用 Range 请求避免下载整个文件。
+
+    弱网下第一次探测很容易超时（GitHub 的 Release 尤其），一次失败就判
+    「下载源不可用」太武断 —— 所以这里自己重试一次，第二次超时放宽 5 秒。
+    两次都失败才算真不可用，而且调用方还有兜底（预检全挂也会直连试一次）。
+    """
+    ok, size = _probe_once(url, timeout)
+    if ok:
+        return ok, size
+    time.sleep(0.4)
+    return _probe_once(url, timeout + 5.0)
 
 
 def resolve_sources(app: AppEntry) -> Iterable[tuple[Source, bool, int]]:

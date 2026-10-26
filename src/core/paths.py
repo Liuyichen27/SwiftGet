@@ -8,7 +8,7 @@ from pathlib import Path
 
 APP_NAME = "SwiftGet"
 APP_TITLE = "SwiftGet · 极速软件下载器"
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.2.1"
 APP_ID = "SwiftGet"
 
 
