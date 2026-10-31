@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 import ctypes
-import ctypes.wintypes
 import queue
 import threading
 import time
+import tkinter as tk
 import tkinter.messagebox as messagebox
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -13,9 +13,15 @@ from typing import Callable
 
 import customtkinter as ctk
 
+from core import plat
 from core.aria2 import Aria2Engine, Aria2Error, Aria2Options, human_size, human_speed
 from core.catalog import AppEntry, Catalog, probe_source
-from core.installer import launch_after_install, run_silent, verify_installer
+from core.installer import (
+    ERROR_CANCELLED,
+    launch_after_install,
+    run_silent,
+    verify_installer,
+)
 from core import update
 from core.paths import APP_TITLE, APP_VERSION, data_root, is_frozen, open_in_explorer
 from core.settings import Settings
@@ -31,8 +37,10 @@ def dpi_scale(hwnd: int = 0) -> float:
     """获取 DPI 缩放比（1.0 / 1.25 / 1.5 / 2.0 …）。
 
     优先用窗口自身的 DPI：``GetDpiForSystem`` 在打包进程里可能返回被
-    虚拟化后的 96，导致界面尺寸算错。
+    虚拟化后的 96，导致界面尺寸算错。Linux 下没有这个概念，直接返回 1.0。
     """
+    if not plat.IS_WIN:
+        return 1.0
     user32 = ctypes.windll.user32
     if hwnd:
         try:
@@ -111,7 +119,7 @@ class SwiftGetApp(ctk.CTk):
         不弹窗——正下载东西的时候弹窗最烦人。查不到静默不管（缓存 6 小时，
         弱网机器不会每次都去超时一遍）。
         """
-        if self._closing or not is_frozen():
+        if self._closing or (not is_frozen() and plat.IS_WIN):
             return
 
         def worker() -> None:
@@ -151,13 +159,15 @@ class SwiftGetApp(ctk.CTk):
         scale = dpi_scale(self.winfo_id())
 
         # GetSystemMetrics 返回物理像素，不受 DPI 虚拟化影响
-        try:
-            sw = ctypes.windll.user32.GetSystemMetrics(0)
-            sh = ctypes.windll.user32.GetSystemMetrics(1)
-        except Exception:  # noqa: BLE001
-            sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+        sw = sh = 0
+        if plat.IS_WIN:
+            try:
+                sw = ctypes.windll.user32.GetSystemMetrics(0)
+                sh = ctypes.windll.user32.GetSystemMetrics(1)
+            except Exception:  # noqa: BLE001
+                sw = sh = 0
         if sw < 640 or sh < 480:
-            sw, sh = 1280, 720
+            sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
 
         target_w = min(int(w * scale), int(sw * 0.94))
         target_h = min(int(h * scale), int(sh * 0.90))
@@ -172,6 +182,17 @@ class SwiftGetApp(ctk.CTk):
 
     def _set_icon(self) -> None:
         from core.paths import asset
+
+        if not plat.IS_WIN:
+            # Tk 在 Linux 上不认 .ico，用 PNG 走 iconphoto
+            png = asset("app.png")
+            if png.exists():
+                try:
+                    self._icon_img = tk.PhotoImage(file=str(png))
+                    self.iconphoto(True, self._icon_img)
+                except Exception:  # noqa: BLE001
+                    pass
+            return
 
         ico = asset("app.ico")
         if ico.exists():
@@ -298,8 +319,11 @@ class SwiftGetApp(ctk.CTk):
             return
 
         target_dir = self.settings.download_path
+        # verifying / installing 也要挡住：这期间再提交会重复下载同一个文件，
+        # aria2 开了 allow-overwrite，会把正在校验/安装的安装包原地覆盖掉
         for app in apps:
-            if any(j.app.id == app.id and j.state in ("downloading", "pending")
+            if any(j.app.id == app.id and j.state in ("pending", "downloading",
+                                                      "verifying", "installing")
                    for j in self.jobs.values()):
                 continue
             job = DownloadJob(app=app, lang=lang)
@@ -420,6 +444,10 @@ class SwiftGetApp(ctk.CTk):
                 return
             time.sleep(0.4)
 
+        # 窗口正在关闭：不要再走校验/安装，直接收尾
+        if self._closing:
+            return
+
         # 定位文件
         status = self.engine.tell(job.gid)
         files = status.get("files") or []
@@ -440,7 +468,10 @@ class SwiftGetApp(ctk.CTk):
             self._ui(job, "error", job.message)
             return
 
-        if app.kind != "installer":
+        needs_install = app.kind == "installer" or (
+            plat.IS_LINUX and app.kind in ("deb", "tarball")
+        )
+        if not needs_install:
             # 绿色版 / 源码包没有安装步骤，下完就算完成
             job.state = "finished"
             if app.kind == "portable":
@@ -478,6 +509,10 @@ class SwiftGetApp(ctk.CTk):
         threading.Thread(target=worker, daemon=True).start()
 
     def _install_one(self, job: DownloadJob) -> None:
+        if plat.IS_LINUX:
+            self._install_one_linux(job)
+            return
+
         job.state = "installing"
         app_entry = job.app
         workdir = str(job.path.parent) if job.path else None
@@ -489,6 +524,11 @@ class SwiftGetApp(ctk.CTk):
                 app_entry.manual_hint or "正在打开安装向导，请按提示完成安装…",
             )
             result = run_silent([str(job.path)], workdir=workdir, silent=False)
+            if result.code == ERROR_CANCELLED:
+                job.state = "error"
+                job.message = "已取消管理员授权，安装未完成"
+                self._ui(job, "error", job.message)
+                return
             job.install_result = "安装向导已结束"
             job.state = "finished"
             self._ui(job, "finished", "已打开安装向导，安装流程已结束")
@@ -505,6 +545,41 @@ class SwiftGetApp(ctk.CTk):
             if self.settings.auto_launch:
                 launch_after_install()
             if self.settings.delete_after_install and job.path and job.path.exists():
+                try:
+                    job.path.unlink()
+                except OSError:
+                    pass
+        else:
+            job.state = "error"
+            job.message = result.message
+            self._ui(job, "error", f"安装失败：{result.message}")
+
+    def _install_one_linux(self, job: DownloadJob) -> None:
+        """Linux：deb 走 apt，压缩包解到 ~/.local/opt，AppImage 只加可执行位。"""
+        from core import installer_linux
+
+        job.state = "installing"
+        app_entry = job.app
+        if job.path is None:
+            job.state = "error"
+            job.message = "下载文件不见了，请重新下载"
+            self._ui(job, "error", job.message)
+            return
+
+        need_root = job.path.name.lower().endswith(".deb")
+        self._ui(job, "installing",
+                 "正在安装 deb（如弹出授权窗口请输入密码）…" if need_root
+                 else f"正在解压到 ~/.local/opt/{app_entry.id} …")
+
+        result = installer_linux.install(app_entry, job.path)
+        job.install_result = result.message
+
+        if result.ok:
+            job.state = "finished"
+            self._ui(job, "finished", result.message)
+            if self.settings.delete_after_install and job.path.exists() \
+                    and not need_root:
+                # deb 留着：用户可能想重装，而且 apt 装完源文件也没用了才删
                 try:
                     job.path.unlink()
                 except OSError:

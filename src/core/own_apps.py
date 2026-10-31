@@ -13,6 +13,7 @@
 """
 from __future__ import annotations
 
+from . import plat
 from .catalog import AppEntry, Source
 
 # 每个项目各发各的版本，不再共用一个大版本号。
@@ -20,7 +21,7 @@ from .catalog import AppEntry, Source
 # 就会指向并不存在的 Release（404）——工具包还是 1.1.0，黑板已经是 1.2.0
 # 的时候这个坑必然踩。现在每条自己带 ver，互不影响。
 DEFAULT_VERSION = "1.1.0"
-VER_CLEANBLACKBOARD = "1.2.0"
+VER_CLEANBLACKBOARD = "1.2.2"
 VER_AUTOSTARTFORAPP = "1.0.0"
 
 OWNER = "Liuyichen27"
@@ -42,8 +43,26 @@ def _e(**kw) -> AppEntry:
     return AppEntry(**kw)
 
 
-OWN_APPS: list[AppEntry] = [
-    _e(
+def _clean_blackboard() -> AppEntry:
+    """简黑板：Windows 发 exe，Linux 发 deb（同一份源码，两套外壳）。"""
+    if plat.IS_LINUX:
+        deb = f"cleanblackboard_{VER_CLEANBLACKBOARD}_all.deb"
+        return _e(
+            id="cleanblackboard",
+            name="CleanBlackboard - 简黑板",
+            vendor="自研 · 桌面应用",
+            category="桌面应用",
+            desc="双击就能写的白板，不联网、无账号，Linux 原生 deb",
+            color="#2F6BFF",
+            sources=_release("clean-blackboard", deb, VER_CLEANBLACKBOARD),
+            size_label="≈130 KB · deb 包",
+            kind="installer",
+            filename=deb,
+            homepage="https://github.com/Liuyichen27/clean-blackboard",
+            note="手写、框选/点选、选中改色、取色器、小黑板、导出 PNG 与工程文件，\n全部离线可用；装完在应用菜单里能搜到「简黑板」。",
+            usage="装完敲 cleanblackboard 启动 · 或 sudo apt install ./" + deb,
+        )
+    return _e(
         id="cleanblackboard",
         name="CleanBlackboard - 简黑板",
         vendor="自研 · 桌面应用",
@@ -55,9 +74,34 @@ OWN_APPS: list[AppEntry] = [
         kind="portable",
         filename="CleanBlackboard.exe",
         homepage="https://github.com/Liuyichen27/clean-blackboard",
-        note="手写、框选/点选、选中改色、小黑板、导出 PNG 与工程文件，\n全部离线可用；1.2.0 起打开时自动检查更新。",
+        note="手写、框选/点选、选中改色、取色器、小黑板、导出 PNG 与工程文件，\n全部离线可用；1.2.0 起打开时自动检查更新。",
         usage="双击 CleanBlackboard.exe 就能写 · Ctrl+S 存工程 / Ctrl+E 导 PNG",
-    ),
+    )
+
+
+def _autostart_for_app() -> AppEntry | None:
+    """启动项管理读的是注册表，只有 Windows 版；Linux 上不展示。"""
+    if not plat.IS_WIN:
+        return None
+    return _e(
+        id="autostartforapp",
+        name="AutostartForApp - 启动项管理",
+        vendor="自研 · 桌面应用",
+        category="桌面应用",
+        desc="图形版开机启动项管理，看清来源再动手，动手前先备份",
+        color="#F79009",
+        sources=_release("autostart-for-app", "AutostartForApp.exe", VER_AUTOSTARTFORAPP),
+        size_label="≈13.1 MB · 绿色版",
+        kind="portable",
+        filename="AutostartForApp.exe",
+        homepage="https://github.com/Liuyichen27/autostart-for-app",
+        note="表格列出 HKCU/HKLM Run 与两个启动文件夹的全部启动项，\n每条带完整命令；禁用前自动备份，随时能还原。命令行版 autostart 仍然独立保留。",
+        usage="双击 AutostartForApp.exe · 选中一条 → 右侧详情 → 禁用/备份",
+    )
+
+
+_OWN_APPS: list[AppEntry] = [
+    _clean_blackboard(),
     _e(
         id="dupfinder",
         name="dupfinder",
@@ -148,22 +192,13 @@ OWN_APPS: list[AppEntry] = [
         note="输出格式与 coreutils sha256sum 完全一致，能验发行版的 SHA256SUMS，\n别人也能用 sha256sum -c 验你的。1 MB 流式读取，纯标准库。",
         usage="pip install .  →  quickhash 镜像.iso --save SHA256SUMS",
     ),
-    _e(
-        id="autostartforapp",
-        name="AutostartForApp - 启动项管理",
-        vendor="自研 · 桌面应用",
-        category="桌面应用",
-        desc="图形版开机启动项管理，看清来源再动手，动手前先备份",
-        color="#F79009",
-        sources=_release("autostart-for-app", "AutostartForApp.exe", VER_AUTOSTARTFORAPP),
-        size_label="≈13.1 MB · 绿色版",
-        kind="portable",
-        filename="AutostartForApp.exe",
-        homepage="https://github.com/Liuyichen27/autostart-for-app",
-        note="表格列出 HKCU/HKLM Run 与两个启动文件夹的全部启动项，\n每条带完整命令；禁用前自动备份，随时能还原。命令行版 autostart 仍然独立保留。",
-        usage="双击 AutostartForApp.exe · 选中一条 → 右侧详情 → 禁用/备份",
-    ),
 ]
+
+_autostart_gui = _autostart_for_app()
+if _autostart_gui is not None:
+    _OWN_APPS.append(_autostart_gui)
+
+OWN_APPS: list[AppEntry] = _OWN_APPS
 
 
 def own_catalog() -> dict[str, AppEntry]:

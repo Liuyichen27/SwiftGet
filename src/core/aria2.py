@@ -7,7 +7,8 @@ aria2 同时提供两种加速能力：
 * **BitTorrent / P2P**：磁力链、种子文件，通过 DHT + Peer Exchange 从多个节点
   并行拉取，节点越多越快。
 
-引擎以内嵌 aria2c.exe 子进程 + JSON-RPC 方式工作，无控制台窗口。
+引擎以 aria2c 子进程 + JSON-RPC 方式工作：Windows 用内置的 aria2c.exe，
+Linux 用系统装的 aria2（apt install aria2），两边参数完全一致。
 """
 from __future__ import annotations
 
@@ -24,10 +25,16 @@ from typing import Any
 
 import requests
 
-from .paths import ensure_aria2
+from . import plat
+from .paths import APP_VERSION, ensure_aria2
 
-CREATE_NO_WINDOW = 0x08000000
+CREATE_NO_WINDOW = plat.CREATE_NO_WINDOW
 DETACHED = 0x00000008
+
+# 报给下载源的 UA：Linux 版就别装成 Windows 了，个别源会按 UA 给不同文件
+_UA_OS = ("Windows NT 10.0; Win64; x64" if plat.IS_WIN
+          else "X11; Linux x86_64" if plat.IS_LINUX else "Macintosh; Intel Mac OS X 10_15_7")
+UA = f"Mozilla/5.0 ({_UA_OS}) SwiftGet/{APP_VERSION}"
 
 
 class Aria2Error(RuntimeError):
@@ -60,7 +67,12 @@ class Aria2Engine:
         self.session = requests.Session()
         self.session.trust_env = False  # 避免系统代理干扰本机 RPC
         self._lock = threading.Lock()
-        self._log_path = Path(os.environ.get("TEMP", ".")) / "swiftget_aria2.log"
+        self._log_path = plat.data_home() / "SwiftGet" / "aria2.log" if not plat.IS_WIN \
+            else Path(os.environ.get("TEMP", ".")) / "swiftget_aria2.log"
+        try:
+            self._log_path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
 
     # -- 生命周期 ---------------------------------------------------------
     @property
@@ -72,8 +84,15 @@ class Aria2Engine:
             if self.running:
                 return
             exe = ensure_aria2()
-            if not exe.exists():
-                raise Aria2Error("缺少 aria2c 内核文件，请重新安装程序。")
+            if not exe.exists() or (not plat.IS_WIN and not plat.has(exe.name)):
+                if plat.IS_WIN:
+                    raise Aria2Error("缺少 aria2c 内核文件，请重新安装程序。")
+                raise Aria2Error(
+                    "没找到 aria2c 下载内核。装上就行：\n"
+                    "  Debian / Ubuntu:  sudo apt install aria2\n"
+                    "  Fedora:           sudo dnf install aria2\n"
+                    "  Arch:             sudo pacman -S aria2"
+                )
 
             opts = self.options
             args = [
@@ -103,7 +122,7 @@ class Aria2Engine:
                 # 强制走 IPv4 更稳（绝大多数下载源都支持 IPv4）
                 "--disable-ipv6=true",
                 "--async-dns=true",
-                "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) SwiftGet/1.0",
+                f"--user-agent={UA}",
                 # 日志静默
                 "--console-log-level=warn",
                 "--summary-interval=0",
@@ -126,7 +145,7 @@ class Aria2Engine:
                 args += ["--enable-dht=false", "--bt-enable-lpd=false"]
 
             log = open(self._log_path, "ab")
-            creationflags = CREATE_NO_WINDOW
+            creationflags = plat.creation_flags()
             self.proc = subprocess.Popen(
                 args, stdout=log, stderr=log, stdin=subprocess.DEVNULL,
                 creationflags=creationflags,

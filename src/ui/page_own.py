@@ -198,6 +198,7 @@ class OwnAppsPage(ctk.CTkFrame):
         for job in getattr(self.host, "jobs", {}).values():
             card = self.cards.get(job.app.id)
             if card is None:
+                # 任务不属于本页（比如常用软件的任务），保留原有卡片引用
                 continue
             job.card = card
             try:

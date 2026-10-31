@@ -9,10 +9,19 @@ import ctypes
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
-from ctypes import wintypes
 from dataclasses import dataclass
 from pathlib import Path
+
+from . import plat
+
+IS_WIN = plat.IS_WIN
+
+if IS_WIN:
+    from ctypes import wintypes
+else:  # Linux/macOS 不会走到这里，但要保证模块能被 import
+    wintypes = None  # type: ignore[assignment]
 
 CREATE_NO_WINDOW = 0x08000000
 
@@ -25,25 +34,39 @@ SW_SHOWNORMAL = 1
 ERROR_CANCELLED = 1223
 INFINITE = 0xFFFFFFFF
 
+# use_last_error=True 才能拿到真实错误码；windll 共享实例不做捕获，
+# get_last_error() 会一直返回 0，UAC 取消等真实错误全被吞掉
+_shell32 = ctypes.WinDLL("shell32", use_last_error=True) if IS_WIN else None
 
-class SHELLEXECUTEINFOW(ctypes.Structure):
-    _fields_ = [
-        ("cbSize", wintypes.DWORD),
-        ("fMask", ctypes.c_ulong),
-        ("hwnd", wintypes.HWND),
-        ("lpVerb", wintypes.LPCWSTR),
-        ("lpFile", wintypes.LPCWSTR),
-        ("lpParameters", wintypes.LPCWSTR),
-        ("lpDirectory", wintypes.LPCWSTR),
-        ("nShow", ctypes.c_int),
-        ("hInstApp", wintypes.HINSTANCE),
-        ("lpIDList", ctypes.c_void_p),
-        ("lpClass", wintypes.LPCWSTR),
-        ("hkeyClass", wintypes.HKEY),
-        ("dwHotKey", wintypes.DWORD),
-        ("hIcon", wintypes.HANDLE),
-        ("hProcess", wintypes.HANDLE),
-    ]
+
+if IS_WIN:
+
+    class SHELLEXECUTEINFOW(ctypes.Structure):
+        _fields_ = [
+            ("cbSize", wintypes.DWORD),
+            ("fMask", ctypes.c_ulong),
+            ("hwnd", wintypes.HWND),
+            ("lpVerb", wintypes.LPCWSTR),
+            ("lpFile", wintypes.LPCWSTR),
+            ("lpParameters", wintypes.LPCWSTR),
+            ("lpDirectory", wintypes.LPCWSTR),
+            ("nShow", ctypes.c_int),
+            ("hInstApp", wintypes.HINSTANCE),
+            ("lpIDList", ctypes.c_void_p),
+            ("lpClass", wintypes.LPCWSTR),
+            ("hkeyClass", wintypes.HKEY),
+            ("dwHotKey", wintypes.DWORD),
+            ("hIcon", wintypes.HANDLE),
+            ("hProcess", wintypes.HANDLE),
+        ]
+
+else:
+
+    class SHELLEXECUTEINFOW:  # type: ignore[no-redef]
+        """占位类：保证非 Windows 平台 import 本模块不报错。"""
+
+        def __init__(self) -> None:
+            raise RuntimeError("ShellExecuteEx 仅在 Windows 上可用")
 
 
 class ElevationCancelled(RuntimeError):
@@ -76,7 +99,7 @@ def _run_shellexec(
     sei.lpDirectory = cwd
     sei.nShow = SW_SHOWNORMAL if show else SW_HIDE
 
-    if not ctypes.windll.shell32.ShellExecuteExW(ctypes.byref(sei)):
+    if not _shell32.ShellExecuteExW(ctypes.byref(sei)):
         err = ctypes.get_last_error()
         if err == ERROR_CANCELLED:
             raise ElevationCancelled("已取消管理员授权")
@@ -137,6 +160,14 @@ def run_silent(
 
 def launch_after_install(hint_path: str | None = None) -> None:
     """安装完成后静默拉起软件（尽力而为，失败忽略）。"""
+    if not IS_WIN:
+        if hint_path and Path(hint_path).exists():
+            try:
+                subprocess.Popen([hint_path], start_new_session=True)
+            except OSError:
+                pass
+        return
+
     candidates: list[str] = []
     if hint_path:
         candidates.append(hint_path)
@@ -196,6 +227,26 @@ def verify_installer(path: str | Path, kind: str = "installer") -> tuple[bool, s
         if head[:2] != b"PK":
             return False, "不是有效的 ZIP 压缩包"
         return True, "OK"
+
+    name = p.name.lower()
+    # ---- Linux 包类型 ----
+    if name.endswith(".deb"):
+        if head[:7] != b"!<arch>":
+            return False, "deb 文件头异常（应以 !<arch> 开头），可能已损坏"
+        return True, "OK"
+    if name.endswith((".tar.xz", ".txz")):
+        if head[:6] != b"\xfd7zXZ\x00":
+            return False, "不是有效的 XZ 压缩包"
+        return True, "OK"
+    if name.endswith((".tar.gz", ".tgz")):
+        if head[:2] != b"\x1f\x8b":
+            return False, "不是有效的 GZIP 压缩包"
+        return True, "OK"
+    if name.endswith(".appimage"):
+        if head[:4] != b"\x7fELF":
+            return False, "不是有效的 AppImage（应为 ELF 文件）"
+        return True, "OK"
+
     if p.suffix.lower() == ".msi":
         if head[:8] != b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1":
             return False, "MSI 文件头异常，可能已损坏"

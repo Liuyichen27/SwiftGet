@@ -8,7 +8,7 @@ from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
 
-from core import update
+from core import plat, update
 from core.paths import APP_VERSION, data_root, is_frozen, open_in_explorer
 
 from . import theme, widgets
@@ -301,7 +301,7 @@ class SettingsPage(ctk.CTkFrame):
         if not messagebox.askyesno("发现新版本", msg, parent=self):
             return
 
-        if not is_frozen():
+        if not is_frozen() and plat.IS_WIN:
             messagebox.showinfo(
                 "检查更新",
                 f"新版本 v{latest} 可用。\n源码运行模式不能自己替换，"
@@ -317,7 +317,7 @@ class SettingsPage(ctk.CTkFrame):
         self._updating = True
         self._set_update_btn("0%", state="disabled")
         urls = update.asset_urls(info.get("asset_url") or "")
-        dest = data_root() / f"SwiftGet-{info.get('latest')}.exe"
+        dest = data_root() / update.asset_filename(info.get("latest"))
 
         def progress(got: int, total: int) -> None:
             pct = f"{round(got * 100 / total)}%" if total else "下载中"

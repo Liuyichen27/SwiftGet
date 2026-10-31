@@ -209,9 +209,11 @@ class AppsPage(ctk.CTkFrame):
         """重建卡片后把进行中任务的引用与进度重新挂回去。"""
         for job in getattr(self.host, "jobs", {}).values():
             card = self.cards.get(job.app.id)
-            job.card = card
             if card is None:
+                # 任务不属于本页（比如自创应用的任务），别把 job.card 清成
+                # None——那会把另一个页面正在显示的进度卡片弄丢
                 continue
+            job.card = card
             try:
                 if job.state == "error":
                     card.show_error(job.message or "出错")

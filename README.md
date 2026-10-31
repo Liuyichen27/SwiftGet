@@ -1,13 +1,13 @@
 # SwiftGet · 极速软件下载器
 
-[![Version](https://img.shields.io/badge/version-1.2.0-2F6BFF)](https://github.com/liuyichen27/SwiftGet/releases)
-[![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6)](https://github.com/liuyichen27/SwiftGet/releases)
+[![Version](https://img.shields.io/badge/version-1.3.0-2F6BFF)](https://github.com/liuyichen27/SwiftGet/releases)
+[![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011%20%7C%20Linux-0078D6)](https://github.com/liuyichen27/SwiftGet/releases)
 [![License](https://img.shields.io/badge/license-MIT-12B76A)](LICENSE)
 
-一个简洁、开源、全自动的 Windows 软件下载器。勾选常用软件，选好路径和语言，
-剩下的下载与安装全部在后台静默完成。
+一个简洁、开源、全自动的软件下载器。勾选常用软件，选好路径和语言，
+剩下的下载与安装全部在后台静默完成。Windows 绿色单文件，Linux 走 deb。
 
-**[⬇ 下载最新版](https://github.com/liuyichen27/SwiftGet/releases/latest)** · 单文件绿色版，解压即用
+**[⬇ 下载最新版](https://github.com/liuyichen27/SwiftGet/releases/latest)** · Windows：单文件绿色版，解压即用 · Linux：`swiftget_<版本>_all.deb`
 
 ![界面预览](docs/preview-apps.png)
 
@@ -55,9 +55,42 @@
 
 卡片上会直接标出「需手动确认安装」，勾选时底部也会提示有几个软件需要手动。
 
+## Linux（Debian / Ubuntu）
+
+```bash
+sudo apt install ./swiftget_1.3.0_all.deb
+swiftget              # 或从应用菜单点「极速下载器」
+swiftget --check      # 装完先跑这个：缺哪个依赖它会直接告诉你怎么补
+```
+
+**为什么 Linux 版是源码包而不是单文件**：PyInstaller 不能交叉编译，Windows 上跑不出
+一份 Linux 可执行文件。所以这个 deb 是 `Architecture: all`——里面放 Python 源码、界面资源，
+以及打包进去的 `customtkinter` / `darkdetect`（Debian 仓库里没有这两个包，又不能让你
+`pip install` 到系统 Python 里）。运行时用系统的 `python3` + `python3-tk`。
+
+| 依赖 | 作用 |
+| --- | --- |
+| `python3-tk` | tkinter，界面底座 |
+| `python3-requests` | 查清单、预检下载源 |
+| `python3-pil` / `python3-packaging` | customtkinter 的依赖 |
+| `aria2` | 下载内核（多线程分片 + BT） |
+
+`Recommends` 里还有 `fonts-noto-cjk`（没中文字体会整屏方块）、`xdg-utils`（打开所在文件夹）、
+`pkexec`（装 deb 时的图形授权弹窗）。
+
+Linux 上「安装」不再是 exe 加静默参数，而是按包类型分流：
+
+| 下载到的文件 | 怎么处理 |
+| --- | --- |
+| `.deb` | `pkexec apt install`（弹一次密码框），apt 会给解依赖 |
+| `.tar.xz` / `.tar.gz` | 解到 `~/.local/opt/<id>`，在 `~/.local/bin` 建同名软链 |
+| `.AppImage` | `chmod +x` 后收进 `~/.local/bin` |
+
+刻意不碰 `/usr/local`、不动系统目录：用户装的东西都落在自己家目录下，卸载就是删文件夹。
+
 ## 使用
 
-1. 双击 `SwiftGet.exe` 启动。
+1. 双击 `SwiftGet.exe` 启动（Linux 上敲 `swiftget`）。
 2. 在「常用软件」页勾选需要的软件，选择保存路径与安装语言；
    也可以在「自创应用」页下载作者自研的工具。
 3. 点击「开始下载」，程序会预检源、下载、校验并静默安装。
@@ -80,7 +113,8 @@
 
 ## 软件清单与源维护
 
-内置清单在 `src/core/catalog.py`。运行时的覆盖文件位于：
+内置清单在 `src/core/catalog.py`（Windows）和 `src/core/catalog_linux.py`（Linux，
+chrome / edge / vscode 走 deb，firefox 走 tar.xz）。运行时的覆盖文件位于：
 
 ```
 %APPDATA%\SwiftGet\catalog.json

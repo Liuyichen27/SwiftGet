@@ -17,6 +17,7 @@ from typing import Any, Iterable
 
 import requests
 
+from . import plat
 from .paths import data_root
 
 # --------------------------------------------------------------------------
@@ -76,8 +77,11 @@ class AppEntry:
 
     @property
     def file_ext(self) -> str:
-        if self.filename.lower().endswith(".zip"):
-            return ".zip"
+        # 按文件名判断，别只看 installer：Linux 上有 deb / AppImage / tar.xz
+        low = self.filename.lower()
+        for ext in (".tar.xz", ".tar.gz", ".tar.bz2", ".appimage", ".deb", ".zip"):
+            if low.endswith(ext):
+                return ext
         return ".msi" if self.installer == "msi" else ".exe"
 
     def suggested_filename(self) -> str:
@@ -250,8 +254,10 @@ BUILTIN: list[AppEntry] = [
         silent_args=["/S"],
         homepage="https://www.7-zip.org/",
         sources=[
+            # 官方 7-zip.org 会 302 到 GitHub Release（国内直连常超时），
+            # 旧版清华镜像路径已 404 下线，换 gh-proxy 加速镜像兜底
             ("https://www.7-zip.org/a/7z2409-x64.exe", "官方"),
-            ("https://mirrors.tuna.tsinghua.edu.cn/7zip/7z2409-x64.exe", "清华镜像"),
+            ("https://gh-proxy.com/https://github.com/ip7z/7zip/releases/download/24.09/7z2409-x64.exe", "GitHub 加速镜像"),
         ],
     ),
     _e(
@@ -296,7 +302,7 @@ BUILTIN: list[AppEntry] = [
         homepage="https://notepad-plus-plus.org/",
         sources=[
             ("https://github.com/notepad-plus-plus/notepad-plus-plus/releases/download/v8.7.1/npp.8.7.1.Installer.x64.exe", "GitHub"),
-            ("https://ghfast.top/https://github.com/notepad-plus-plus/notepad-plus-plus/releases/download/v8.7.1/npp.8.7.1.Installer.x64.exe", "GitHub 加速"),
+            ("https://gh-proxy.com/https://github.com/notepad-plus-plus/notepad-plus-plus/releases/download/v8.7.1/npp.8.7.1.Installer.x64.exe", "GitHub 加速"),
         ],
     ),
     _e(
@@ -326,18 +332,60 @@ CATEGORIES = ["全部", "浏览器", "社交办公", "安全防护", "系统工�
 # --------------------------------------------------------------------------
 
 
+def builtin_apps() -> list[AppEntry]:
+    """当前平台的内置清单。
+
+    Windows 那套是 exe + 静默安装参数，到 Linux 上一点用没有，所以分成
+    两份独立的清单，按平台选（catalog_linux 反过来 import 本模块，
+    这里用函数内 import 避开循环）。
+    """
+    if plat.IS_LINUX:
+        from .catalog_linux import linux_catalog
+        return linux_catalog()
+    return BUILTIN
+
+
+def _download_os(text: str) -> str:
+    """从文件名/URL 猜这个包是给哪个系统用的（''=看不出来）。"""
+    low = (text or "").split("?")[0].strip().lower()
+    if low.endswith((".exe", ".msi")):
+        return "win"
+    if low.endswith((".deb", ".appimage", ".tar.xz", ".tar.gz", ".tar.bz2", ".tgz")):
+        return "linux"
+    return ""
+
+
+def _plausible_here(raw: dict[str, Any]) -> bool:
+    """远程/本地清单里某条是不是当前系统能用的。
+
+    清单是跨平台共用的，一份 Windows 清单塞进 Linux 版会让用户下到
+    一个装不上的 exe。这里只看扩展名，看不出来就放行。
+    """
+    probe = str(raw.get("filename") or "")
+    if not probe:
+        for s in raw.get("sources") or []:
+            probe = s.get("url", "") if isinstance(s, dict) else str(s)
+            if probe:
+                break
+    target = _download_os(probe)
+    if not target:
+        return True
+    return (target == "win") == bool(plat.IS_WIN)
+
+
 class Catalog:
     """内置清单 + 本地覆盖 + 远程更新。"""
 
     def __init__(self) -> None:
-        self._apps: dict[str, AppEntry] = {a.id: a for a in BUILTIN}
+        self._builtin = builtin_apps()
+        self._apps: dict[str, AppEntry] = {a.id: a for a in self._builtin}
         self.catalog_file = data_root() / "catalog.json"
         self._load_local_override()
 
     # -- 查询 -------------------------------------------------------------
     @property
     def apps(self) -> list[AppEntry]:
-        order = {a.id: i for i, a in enumerate(BUILTIN)}
+        order = {a.id: i for i, a in enumerate(self._builtin)}
         return sorted(self._apps.values(), key=lambda a: order.get(a.id, 999))
 
     def get(self, app_id: str) -> AppEntry | None:
@@ -366,6 +414,8 @@ class Catalog:
             if not isinstance(raw, dict) or "id" not in raw:
                 continue
             app_id = raw["id"]
+            if not _plausible_here(raw):
+                continue
             existing = self._apps.get(app_id)
             srcs = [
                 Source(s["url"], s.get("label", "自定义")) if isinstance(s, dict) else Source(str(s))

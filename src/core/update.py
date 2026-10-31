@@ -1,13 +1,14 @@
 """自更新：查 GitHub 最新 Release、下载、替换自身并重启。
 
-只针对单文件绿色版（PyInstaller onefile）。流程刻意做得简单可验证：
+只针对打包发行版。流程刻意做得简单可验证：
 
 1. 查 ``releases/latest``，直连与 ``gh-proxy.com`` 镜像各试一轮；
-2. 结果缓存到 ``%APPDATA%\\SwiftGet\\update.json``（查到 24 小时内不重查，
+2. 结果缓存到数据目录的 ``update.json``（查到 24 小时内不重查，
    查不到 6 小时后再试）——否则弱网下每次开窗口都要把两个源全超时一遍；
-3. 下载新 exe 到临时目录，**先校验 PE 头**再落盘，免得把 200 的 HTML
-   错误页当成 exe；
-4. 写一个 bat：等本进程完全退出后覆盖自己，再启动新版。
+3. 下载新包到数据目录，**先校验文件头**再落盘，免得把 200 的 HTML
+   错误页当成安装包；
+4. Windows 写一个 bat 等本进程退出后覆盖 exe；Linux 写一个 sh 等进程退出后
+   用 pkexec/sudo 装 deb。
 
 源码运行（非 frozen）时 ``apply_update`` 直接返回失败，不会去覆盖 python.exe。
 """
@@ -16,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -23,10 +25,13 @@ import urllib.request
 from pathlib import Path
 from typing import Callable
 
+from . import plat
 from .paths import APP_VERSION, data_root, is_frozen
 
 REPO = "Liuyichen27/SwiftGet"
-ASSET = "SwiftGet.exe"
+WIN_ASSET = "SwiftGet.exe"
+DEB_PREFIX = "swiftget_"
+ASSET = WIN_ASSET if plat.IS_WIN else f"{DEB_PREFIX}<版本>_all.deb"
 PROXY = "https://gh-proxy.com/"
 RELEASES_PAGE = f"https://github.com/{REPO}/releases/latest"
 MAX_BYTES = 300 * 1024 * 1024
@@ -45,6 +50,34 @@ def ver_tuple(text: str) -> tuple[int, ...]:
     while len(nums) < 3:
         nums.append(0)
     return tuple(nums)
+
+
+def pick_asset(assets: dict) -> str:
+    """从 release 的资产表里挑出当前平台该下的那个。
+
+    Linux 下资产名带版本号（``swiftget_1.3.0_all.deb``），不能写死；
+    Windows 一直是 ``SwiftGet.exe``。
+    """
+    if not assets:
+        return ""
+    if plat.IS_WIN:
+        return assets.get(WIN_ASSET) or next(
+            (u for n, u in assets.items() if n.lower() == WIN_ASSET.lower()), ""
+        )
+    # Linux：优先 deb
+    for name, url in assets.items():
+        if name.lower().endswith(".deb"):
+            return url
+    for name, url in assets.items():
+        if name.lower().endswith((".appimage", ".tar.xz")):
+            return url
+    return ""
+
+
+def asset_filename(version: str) -> str:
+    """本地保存用的文件名。"""
+    ver = str(version or "").lstrip("vV")
+    return f"SwiftGet-{ver}.exe" if plat.IS_WIN else f"swiftget_{ver}_all.deb"
 
 
 def _opener(url: str, timeout: float, direct: bool):
@@ -103,7 +136,7 @@ def fetch_latest(tries: int = 3, use_cache: bool = True) -> dict | None:
             "version": fake.lstrip("vV"),
             "date": "2026-10-26",
             "notes": "自测用假版本",
-            "assets": {ASSET: ""},
+            "assets": {asset_filename(fake): ""},
             "page": RELEASES_PAGE,
         }
 
@@ -160,7 +193,7 @@ def check_update() -> dict:
         "notes": info.get("notes") or "",
         "has_update": has,
         "page": info.get("page") or RELEASES_PAGE,
-        "asset_url": (info.get("assets") or {}).get(ASSET) or "",
+        "asset_url": pick_asset(info.get("assets") or {}),
     }
 
 
@@ -174,6 +207,19 @@ def asset_urls(url: str) -> list[str]:
 # ----------------------------------------------------------------------
 # 下载
 # ----------------------------------------------------------------------
+def _magic_ok(head: bytes) -> bool:
+    """按平台判断文件头：Windows 看 PE(MZ)，Linux 看 deb ar 魔数。"""
+    if plat.IS_WIN:
+        return head[:2] == b"MZ"
+    if head[:7] == b"!<arch>":          # .deb
+        return True
+    if head[:4] == b"\x7fELF":          # AppImage
+        return True
+    if head[:6] == b"\xfd7zXZ\x00":     # tar.xz
+        return True
+    return False
+
+
 def download(urls: list[str], dest: Path,
              on_progress: Callable[[int, int], None] | None = None) -> Path:
     """按顺序试源下载，边下边回报进度，落盘前校验 PE 头。"""
@@ -196,7 +242,7 @@ def download(urls: list[str], dest: Path,
                             if not chunk:
                                 break
                             if not head:
-                                head = chunk[:2]
+                                head = chunk[:8]
                             got += len(chunk)
                             if got > MAX_BYTES:
                                 raise ValueError("文件超过上限")
@@ -208,9 +254,11 @@ def download(urls: list[str], dest: Path,
                                     on_progress(got, total)
                                 except Exception:  # noqa: BLE001
                                     pass
-                if head != b"MZ":
+                if not _magic_ok(head):
                     tmp.unlink(missing_ok=True)
-                    raise ValueError("下载回来的不是 exe（可能被拦截或代理返回了错误页）")
+                    raise ValueError(
+                        "下载回来的不是有效安装包（可能被拦截或代理返回了错误页）"
+                    )
                 tmp.replace(dest)
                 return dest
             except Exception as e:  # noqa: BLE001
@@ -221,11 +269,71 @@ def download(urls: list[str], dest: Path,
 # ----------------------------------------------------------------------
 # 替换自身
 # ----------------------------------------------------------------------
-def apply_update(new_exe: Path) -> dict:
-    """写 bat：等本进程退出 → 覆盖自身 → 启动新版。
+def _apply_update_linux(new_pkg: Path) -> dict:
+    """等本进程退出 → apt 装上新的 deb → 重新拉起。
 
-    调用方拿到 ``ok=True`` 后应立刻 ``os._exit(0)``，让文件锁释放。
+    deb 里的文件归 root 所有，必须提权。优先 pkexec（桌面会弹图形授权框），
+    退到 ``sudo -n``（只有配了免密才好用）。两条都不通就给出手动命令。
     """
+    if not new_pkg.exists():
+        return {"ok": False, "error": "新版本文件不存在，请重新下载"}
+
+    stable = data_root() / "updates"
+    try:
+        stable.mkdir(parents=True, exist_ok=True)
+        kept = stable / new_pkg.name
+        shutil.copy2(new_pkg, kept)
+    except OSError as e:
+        return {"ok": False, "error": f"存放安装包失败：{e}"}
+
+    if shutil.which("pkexec"):
+        install = f'pkexec apt install -y "{kept}"'
+    elif shutil.which("sudo"):
+        install = f'sudo -n apt install -y "{kept}"'
+    else:
+        return {
+            "ok": False,
+            "error": (
+                f"新版本已下载到：\n{kept}\n\n"
+                "系统里没有 pkexec / sudo，请手动执行：\n"
+                f"sudo apt install -y {kept}"
+            ),
+        }
+
+    script = f'''#!/bin/sh
+# SwiftGet 自更新：等旧进程退出再装，避免 apt 替换文件时程序还在跑
+while kill -0 {os.getpid()} 2>/dev/null; do sleep 0.5; done
+{install}
+if command -v swiftget >/dev/null 2>&1; then
+  swiftget &
+fi
+'''
+    sh = data_root() / "swiftget_update.sh"
+    try:
+        sh.write_text(script, encoding="utf-8")
+        sh.chmod(0o755)
+    except OSError as e:
+        return {"ok": False, "error": f"写更新脚本失败：{e}"}
+
+    try:
+        subprocess.Popen(
+            ["/bin/sh", str(sh)],
+            close_fds=True,
+            start_new_session=True,   # 脱离本进程会话，本进程退出后继续跑
+        )
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"启动更新脚本失败：{e}"}
+    return {"ok": True, "target": str(kept), "bat": str(sh)}
+
+
+def apply_update(new_exe: Path) -> dict:
+    """Windows：写 bat 等本进程退出后覆盖自身；Linux：交给 sh 装 deb。
+
+    调用方拿到 ``ok=True`` 后应立刻关窗退出，让文件锁/进程退出条件成立。
+    """
+    if not plat.IS_WIN:
+        return _apply_update_linux(new_exe)
+
     if not is_frozen():
         return {"ok": False, "error": "源码运行模式下不能自更新，请用绿色版 exe"}
     target = Path(sys.executable).resolve()
